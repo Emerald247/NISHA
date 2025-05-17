@@ -20,10 +20,6 @@ app.post("/api/event", (req, res) => {
   res.sendStatus(200);
 });
 
-app.get("/", (req, res) => {
-  res.send("Nisha Active")
-});
-
 server.listen(3000, () => {
   console.log("Server listening on http://localhost:3000");
 });
