@@ -8,50 +8,94 @@
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+    integrity="sha256-sA+e2xL4H9h3gp5hZVIhF0SyFfQLHZv1H+cl6H0uuDI="
+    crossorigin=""
   />
   <style>
-    #map { height: 100vh; }
+    body, html { margin:0; padding:0; height:100%; }
+    #map { width:100%; height:100%; }
+    .marker-popup { font-family: Arial, sans-serif; font-size: 14px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
   <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script
+    src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"
+    integrity="sha256-o9N1j7kQ+YtwIYEdM3wT8XmMDmDrSc3bjf2jnGxZZyg="
+    crossorigin=""
+  ></script>
   <!-- Socket.io client -->
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    // 1) Initialize map (center at [0,0], adjust as needed)
+    // --- 1) Initialize the Leaflet map ---
+    // You can change these to your real deployment bounds or coordinates.
     const map = L.map("map").setView([0, 0], 2);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18
+      maxZoom: 18,
+      attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 2) Connect to server via WebSocket
+    // Optional: keep only the last N markers
+    const MAX_MARKERS = 100;
+    const markers = [];
+
+    // --- 2) Connect via Socket.io ---
     const socket = io();
 
-    // 3) On each new event, plot it
+    socket.on("connect", () => {
+      console.log("Connected to server via Socket.io");
+    });
+    socket.on("disconnect", () => {
+      console.log("Disconnected from server");
+    });
+
+    // --- 3) Handle incoming events ---
     socket.on("newEvent", (evt) => {
-      // evt.location must be {x:…, y:…} or lat/lon
-      const lat = evt.location.y;  // swap if your coords are lat=x, lon=y
-      const lon = evt.location.x;
-      const micLevels = evt.boards.map(b => b.mic).join(",");
-      const motions   = evt.boards.map(b => b.motion).join(",");
+      try {
+        // Ensure structure
+        if (!evt.location || !evt.boards) return;
 
-      const marker = L.circleMarker([lat, lon], {
-        radius: 8,
-        color: "red",
-        fillOpacity: 0.7
-      }).addTo(map);
+        // Extract coords (swap if needed)
+        const lat = evt.location.y;
+        const lon = evt.location.x;
 
-      marker.bindPopup(`
-        <strong>Event @ ${new Date(evt.timestamp).toLocaleTimeString()}</strong><br>
-        Mic levels: ${micLevels}<br>
-        Motion flags: ${motions}
-      `);
+        // Compute summary info
+        const micLevels = evt.boards.map(b => b.mic).join(", ");
+        const motions   = evt.boards.map(b => b.motion ? "•" : " ").join(" ");
 
-      // Pan to the point
-      map.panTo([lat, lon]);
+        // Create a red circle marker
+        const marker = L.circleMarker([lat, lon], {
+          radius: 8,
+          color: "red",
+          fillColor: "#f03",
+          fillOpacity: 0.7,
+          weight: 1
+        }).addTo(map);
+
+        // Popup HTML
+        const popupHtml = `
+          <div class="marker-popup">
+            <strong>Event @ ${new Date(evt.timestamp).toLocaleTimeString()}</strong><br>
+            <em>Mic levels:</em> [${micLevels}]<br>
+            <em>Motion flags:</em> [${motions}]
+          </div>
+        `;
+        marker.bindPopup(popupHtml);
+
+        // Pan to latest
+        map.panTo([lat, lon]);
+
+        // Maintain marker count
+        markers.push(marker);
+        if (markers.length > MAX_MARKERS) {
+          const old = markers.shift();
+          map.removeLayer(old);
+        }
+      } catch (err) {
+        console.error("Error handling newEvent:", err);
+      }
     });
   </script>
 </body>
